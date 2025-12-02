@@ -1,0 +1,11 @@
+version: "3.8"
+
+services:
+  anytype-mcp:
+    build: .
+    ports:
+      - "31009:31009"
+    environment:
+      - NODE_ENV=production
+      - ANYTYPE_API_KEY=${ANYTYPE_API_KEY}
+    restart: unless-stopped
