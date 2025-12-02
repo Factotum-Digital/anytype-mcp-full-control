@@ -54,6 +54,7 @@ export class AnytypeClient {
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${config.anytype.apiKey}`,
+        "Anytype-Version": config.anytype.apiVersion,
       },
       timeout: 30000, // 30 seconds
     });
@@ -95,10 +96,10 @@ export class AnytypeClient {
   async getObjects(spaceId?: string, type?: string): Promise<AnytypeObject[]> {
     try {
       const params: Record<string, any> = {};
-      if (spaceId) params.spaceId = spaceId;
-      if (type) params.type = type;
+      if (spaceId) params.space_id = spaceId;
+      if (type) params.type_filter = type;
 
-      const response = await this.client.get("/api/objects", { params });
+      const response = await this.client.get("/objects/search", { params });
       return response.data.objects || [];
     } catch (error: any) {
       throw this.handleError(error);
@@ -107,7 +108,7 @@ export class AnytypeClient {
 
   async getObject(id: string): Promise<AnytypeObject | null> {
     try {
-      const response = await this.client.get(`/api/objects/${id}`);
+      const response = await this.client.get(`/objects/${id}`);
       return response.data.object || null;
     } catch (error: any) {
       if (error.response?.status === 404) {
@@ -119,9 +120,9 @@ export class AnytypeClient {
 
   async createObject(params: CreateObjectParams): Promise<AnytypeObject> {
     try {
-      const response = await this.client.post("/api/objects", {
+      const response = await this.client.post("/objects", {
         type: params.type,
-        spaceId: params.spaceId,
+        space_id: params.spaceId,
         properties: params.properties,
       });
       return response.data.object;
@@ -132,7 +133,7 @@ export class AnytypeClient {
 
   async updateObject(id: string, properties: Record<string, any>): Promise<AnytypeObject> {
     try {
-      const response = await this.client.patch(`/api/objects/${id}`, {
+      const response = await this.client.patch(`/objects/${id}`, {
         properties,
       });
       return response.data.object;
@@ -143,7 +144,7 @@ export class AnytypeClient {
 
   async deleteObject(id: string): Promise<void> {
     try {
-      await this.client.delete(`/api/objects/${id}`);
+      await this.client.delete(`/objects/${id}`);
     } catch (error: any) {
       throw this.handleError(error);
     }
@@ -151,10 +152,10 @@ export class AnytypeClient {
 
   async searchObjects(query: string, spaceId?: string, type?: string): Promise<AnytypeObject[]> {
     try {
-      const response = await this.client.post("/api/objects/search", {
+      const response = await this.client.post("/objects/search", {
         query,
-        spaceId,
-        type,
+        space_id: spaceId,
+        type_filter: type,
       });
       return response.data.objects || [];
     } catch (error: any) {
@@ -164,7 +165,7 @@ export class AnytypeClient {
 
   async getObjectRelations(objectId: string): Promise<AnytypeObject[]> {
     try {
-      const response = await this.client.get(`/api/objects/${objectId}/relations`);
+      const response = await this.client.get(`/objects/${objectId}/relations`);
       return response.data.relations || [];
     } catch (error: any) {
       throw this.handleError(error);
@@ -174,7 +175,7 @@ export class AnytypeClient {
   // Space operations
   async getSpaces(): Promise<AnytypeSpace[]> {
     try {
-      const response = await this.client.get("/api/spaces");
+      const response = await this.client.get("/spaces");
       return response.data.spaces || [];
     } catch (error: any) {
       throw this.handleError(error);
@@ -183,7 +184,7 @@ export class AnytypeClient {
 
   async getSpace(id: string): Promise<AnytypeSpace | null> {
     try {
-      const response = await this.client.get(`/api/spaces/${id}`);
+      const response = await this.client.get(`/spaces/${id}`);
       return response.data.space || null;
     } catch (error: any) {
       if (error.response?.status === 404) {
@@ -195,7 +196,7 @@ export class AnytypeClient {
 
   async createSpace(params: { name: string; description?: string }): Promise<AnytypeSpace> {
     try {
-      const response = await this.client.post("/api/spaces", params);
+      const response = await this.client.post("/spaces", params);
       return response.data.space;
     } catch (error: any) {
       throw this.handleError(error);
@@ -204,7 +205,7 @@ export class AnytypeClient {
 
   async updateSpace(id: string, params: { name?: string; description?: string }): Promise<AnytypeSpace> {
     try {
-      const response = await this.client.patch(`/api/spaces/${id}`, params);
+      const response = await this.client.patch(`/spaces/${id}`, params);
       return response.data.space;
     } catch (error: any) {
       throw this.handleError(error);
@@ -213,7 +214,7 @@ export class AnytypeClient {
 
   async deleteSpace(id: string): Promise<void> {
     try {
-      await this.client.delete(`/api/spaces/${id}`);
+      await this.client.delete(`/spaces/${id}`);
     } catch (error: any) {
       throw this.handleError(error);
     }
@@ -223,9 +224,9 @@ export class AnytypeClient {
   async getTypes(spaceId?: string): Promise<AnytypeType[]> {
     try {
       const params: Record<string, any> = {};
-      if (spaceId) params.spaceId = spaceId;
+      if (spaceId) params.space_id = spaceId;
 
-      const response = await this.client.get("/api/types", { params });
+      const response = await this.client.get("/types", { params });
       return response.data.types || [];
     } catch (error: any) {
       throw this.handleError(error);
@@ -234,7 +235,7 @@ export class AnytypeClient {
 
   async getType(id: string): Promise<AnytypeType | null> {
     try {
-      const response = await this.client.get(`/api/types/${id}`);
+      const response = await this.client.get(`/types/${id}`);
       return response.data.type || null;
     } catch (error: any) {
       if (error.response?.status === 404) {
@@ -246,7 +247,11 @@ export class AnytypeClient {
 
   async createType(params: { spaceId: string; name: string; properties?: Record<string, any> }): Promise<AnytypeType> {
     try {
-      const response = await this.client.post("/api/types", params);
+      const response = await this.client.post("/types", {
+        space_id: params.spaceId,
+        name: params.name,
+        properties: params.properties,
+      });
       return response.data.type;
     } catch (error: any) {
       throw this.handleError(error);
@@ -255,7 +260,7 @@ export class AnytypeClient {
 
   async updateType(id: string, params: { name?: string; properties?: Record<string, any> }): Promise<AnytypeType> {
     try {
-      const response = await this.client.patch(`/api/types/${id}`, params);
+      const response = await this.client.patch(`/types/${id}`, params);
       return response.data.type;
     } catch (error: any) {
       throw this.handleError(error);
@@ -264,7 +269,7 @@ export class AnytypeClient {
 
   async deleteType(id: string): Promise<void> {
     try {
-      await this.client.delete(`/api/types/${id}`);
+      await this.client.delete(`/types/${id}`);
     } catch (error: any) {
       throw this.handleError(error);
     }
@@ -274,9 +279,9 @@ export class AnytypeClient {
   async getRelations(spaceId?: string): Promise<AnytypeRelation[]> {
     try {
       const params: Record<string, any> = {};
-      if (spaceId) params.spaceId = spaceId;
+      if (spaceId) params.space_id = spaceId;
 
-      const response = await this.client.get("/api/relations", { params });
+      const response = await this.client.get("/relations", { params });
       return response.data.relations || [];
     } catch (error: any) {
       throw this.handleError(error);
@@ -285,7 +290,7 @@ export class AnytypeClient {
 
   async getRelation(id: string): Promise<AnytypeRelation | null> {
     try {
-      const response = await this.client.get(`/api/relations/${id}`);
+      const response = await this.client.get(`/relations/${id}`);
       return response.data.relation || null;
     } catch (error: any) {
       if (error.response?.status === 404) {
@@ -297,7 +302,12 @@ export class AnytypeClient {
 
   async createRelation(params: { spaceId: string; name: string; format: string; options?: Record<string, any> }): Promise<AnytypeRelation> {
     try {
-      const response = await this.client.post("/api/relations", params);
+      const response = await this.client.post("/relations", {
+        space_id: params.spaceId,
+        name: params.name,
+        format: params.format,
+        options: params.options,
+      });
       return response.data.relation;
     } catch (error: any) {
       throw this.handleError(error);
@@ -306,7 +316,7 @@ export class AnytypeClient {
 
   async updateRelation(id: string, params: { name?: string; format?: string; options?: Record<string, any> }): Promise<AnytypeRelation> {
     try {
-      const response = await this.client.patch(`/api/relations/${id}`, params);
+      const response = await this.client.patch(`/relations/${id}`, params);
       return response.data.relation;
     } catch (error: any) {
       throw this.handleError(error);
@@ -315,7 +325,7 @@ export class AnytypeClient {
 
   async deleteRelation(id: string): Promise<void> {
     try {
-      await this.client.delete(`/api/relations/${id}`);
+      await this.client.delete(`/relations/${id}`);
     } catch (error: any) {
       throw this.handleError(error);
     }

@@ -8,8 +8,9 @@ dotenv.config();
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.string().default("31009"),
-  ANYTYPE_API_URL: z.string().default("http://localhost:31009"),
+  ANYTYPE_API_URL: z.string().default("http://localhost:31009/v1"),
   ANYTYPE_API_KEY: z.string().min(1, "ANYTYPE_API_KEY is required"),
+  ANYTYPE_API_VERSION: z.string().default("2025-05-20"),
   LOG_LEVEL: z.enum(["error", "warn", "info", "debug"]).default("info"),
   RATE_LIMIT_WINDOW_MS: z.string().default("900000"), // 15 minutes
   RATE_LIMIT_MAX: z.string().default("100"),
@@ -30,6 +31,7 @@ export const config = {
   anytype: {
     apiUrl: envVars.data.ANYTYPE_API_URL,
     apiKey: envVars.data.ANYTYPE_API_KEY,
+    apiVersion: envVars.data.ANYTYPE_API_VERSION,
   },
   logger: {
     level: envVars.data.LOG_LEVEL,
