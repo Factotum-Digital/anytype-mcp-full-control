@@ -37,8 +37,7 @@ export const spaceController = {
         throw new ApiError(400, "Space name is required");
       }
       const anytype = new AnytypeClient();
-      const newSpace = await anytype.createSpace({ name, description });
-      res.status(201).json({ success: true, data: newSpace });
+      throw new ApiError(501, "createSpace no implementado para acceso directo");
     } catch (error) {
       next(error);
     }
@@ -50,8 +49,7 @@ export const spaceController = {
       const { id } = req.params;
       const { name, description } = req.body;
       const anytype = new AnytypeClient();
-      const updatedSpace = await anytype.updateSpace(id, { name, description });
-      res.json({ success: true, data: updatedSpace });
+      throw new ApiError(501, "updateSpace no implementado para acceso directo");
     } catch (error) {
       next(error);
     }

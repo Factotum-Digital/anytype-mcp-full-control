@@ -1,4 +1,5 @@
-import axios, { AxiosInstance } from "axios";
+import fs from 'fs';
+import path from 'path';
 import { config } from "../config";
 import { logger } from "../utils/logger";
 import { ApiError } from "../utils/ApiError";
@@ -46,167 +47,94 @@ export interface AnytypeRelation {
 }
 
 export class AnytypeClient {
-  private client: AxiosInstance;
+  private anytypeDataPath: string;
+  private spaceStorePath: string;
+  private objectStorePath: string;
 
   constructor() {
-    this.client = axios.create({
-      baseURL: config.anytype.apiUrl,
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${config.anytype.apiKey}`,
-        "Anytype-Version": config.anytype.apiVersion,
-      },
-      timeout: 30000, // 30 seconds
-    });
-
-    // Add request interceptor
-    this.client.interceptors.request.use(
-      (config) => {
-        logger.debug(`Request: ${config.method?.toUpperCase()} ${config.url}`, {
-          data: config.data,
-        });
-        return config;
-      },
-      (error) => {
-        logger.error("Request error:", error);
-        return Promise.reject(error);
-      }
+    this.anytypeDataPath = '/Users/wilfredy/Library/Application Support/anytype/data';
+    
+    const walletDirs = fs.readdirSync(this.anytypeDataPath).filter(d => 
+      fs.statSync(path.join(this.anytypeDataPath, d)).isDirectory() && 
+      d.length > 20
     );
-
-    // Add response interceptor
-    this.client.interceptors.response.use(
-      (response) => {
-        logger.debug(
-          `Response: ${response.config.method?.toUpperCase()} ${response.config.url} ${response.status}`
-        );
-        return response;
-      },
-      (error) => {
-        logger.error("Response error:", {
-          message: error.message,
-          status: error.response?.status,
-          data: error.response?.data,
-        });
-        return Promise.reject(error);
-      }
-    );
-  }
-
-  // Object operations
-  async getObjects(spaceId?: string, type?: string): Promise<AnytypeObject[]> {
-    try {
-      const params: Record<string, any> = {};
-      if (spaceId) params.space_id = spaceId;
-      if (type) params.type_filter = type;
-
-      const response = await this.client.get("/objects/search", { params });
-      return response.data.objects || [];
-    } catch (error: any) {
-      throw this.handleError(error);
+    
+    if (walletDirs.length === 0) {
+      throw new Error('No se encontró el directorio del wallet de Anytype');
     }
+    
+    const walletPath = path.join(this.anytypeDataPath, walletDirs[0]);
+    this.spaceStorePath = path.join(walletPath, 'spaceStoreNew');
+    this.objectStorePath = path.join(walletPath, 'objectstore');
+    
+    logger.info(`Anytype data path: ${this.anytypeDataPath}`);
+    logger.info(`Wallet path: ${walletPath}`);
   }
 
-  async getObject(id: string): Promise<AnytypeObject | null> {
-    try {
-      const response = await this.client.get(`/objects/${id}`);
-      return response.data.object || null;
-    } catch (error: any) {
-      if (error.response?.status === 404) {
-        return null;
-      }
-      throw this.handleError(error);
-    }
-  }
-
-  async createObject(params: CreateObjectParams): Promise<AnytypeObject> {
-    try {
-      const response = await this.client.post("/objects", {
-        type: params.type,
-        space_id: params.spaceId,
-        properties: params.properties,
-      });
-      return response.data.object;
-    } catch (error: any) {
-      throw this.handleError(error);
-    }
-  }
-
-  async updateObject(id: string, properties: Record<string, any>): Promise<AnytypeObject> {
-    try {
-      const response = await this.client.patch(`/objects/${id}`, {
-        properties,
-      });
-      return response.data.object;
-    } catch (error: any) {
-      throw this.handleError(error);
-    }
-  }
-
-  async deleteObject(id: string): Promise<void> {
-    try {
-      await this.client.delete(`/objects/${id}`);
-    } catch (error: any) {
-      throw this.handleError(error);
-    }
-  }
-
-  async searchObjects(query: string, spaceId?: string, type?: string): Promise<AnytypeObject[]> {
-    try {
-      const response = await this.client.post("/objects/search", {
-        query,
-        space_id: spaceId,
-        type_filter: type,
-      });
-      return response.data.objects || [];
-    } catch (error: any) {
-      throw this.handleError(error);
-    }
-  }
-
-  async getObjectRelations(objectId: string): Promise<AnytypeObject[]> {
-    try {
-      const response = await this.client.get(`/objects/${objectId}/relations`);
-      return response.data.relations || [];
-    } catch (error: any) {
-      throw this.handleError(error);
-    }
-  }
-
-  // Space operations
   async getSpaces(): Promise<AnytypeSpace[]> {
     try {
-      const response = await this.client.get("/spaces");
-      return response.data.spaces || [];
+      if (!fs.existsSync(this.spaceStorePath)) {
+        throw new Error('SpaceStore no encontrado');
+      }
+
+      const spaceDirs = fs.readdirSync(this.spaceStorePath);
+      const spaces: AnytypeSpace[] = [];
+
+      for (const spaceId of spaceDirs) {
+        const spacePath = path.join(this.spaceStorePath, spaceId);
+        if (fs.statSync(spacePath).isDirectory()) {
+          const spaceInfo = this.readSpaceMetadata(spacePath);
+          spaces.push({
+            id: spaceId,
+            name: spaceInfo.name || spaceId,
+            description: spaceInfo.description,
+            createdDate: spaceInfo.createdDate || new Date().toISOString(),
+            lastModifiedDate: spaceInfo.lastModifiedDate || new Date().toISOString()
+          });
+        }
+      }
+
+      return spaces;
     } catch (error: any) {
       throw this.handleError(error);
     }
+  }
+
+  private readSpaceMetadata(spacePath: string): any {
+    try {
+      const files = fs.readdirSync(spacePath);
+      const dbFile = files.find(f => f === 'store.db');
+      
+      if (dbFile) {
+        const stats = fs.statSync(path.join(spacePath, dbFile));
+        return {
+          name: path.basename(spacePath),
+          createdDate: stats.birthtime.toISOString(),
+          lastModifiedDate: stats.mtime.toISOString()
+        };
+      }
+    } catch (error) {
+      // Ignorar errores de lectura
+    }
+    
+    return {};
   }
 
   async getSpace(id: string): Promise<AnytypeSpace | null> {
     try {
-      const response = await this.client.get(`/spaces/${id}`);
-      return response.data.space || null;
-    } catch (error: any) {
-      if (error.response?.status === 404) {
+      const spacePath = path.join(this.spaceStorePath, id);
+      if (!fs.existsSync(spacePath)) {
         return null;
       }
-      throw this.handleError(error);
-    }
-  }
 
-  async createSpace(params: { name: string; description?: string }): Promise<AnytypeSpace> {
-    try {
-      const response = await this.client.post("/spaces", params);
-      return response.data.space;
-    } catch (error: any) {
-      throw this.handleError(error);
-    }
-  }
-
-  async updateSpace(id: string, params: { name?: string; description?: string }): Promise<AnytypeSpace> {
-    try {
-      const response = await this.client.patch(`/spaces/${id}`, params);
-      return response.data.space;
+      const spaceInfo = this.readSpaceMetadata(spacePath);
+      return {
+        id,
+        name: spaceInfo.name || id,
+        description: spaceInfo.description,
+        createdDate: spaceInfo.createdDate || new Date().toISOString(),
+        lastModifiedDate: spaceInfo.lastModifiedDate || new Date().toISOString()
+      };
     } catch (error: any) {
       throw this.handleError(error);
     }
@@ -214,20 +142,130 @@ export class AnytypeClient {
 
   async deleteSpace(id: string): Promise<void> {
     try {
-      await this.client.delete(`/spaces/${id}`);
+      const spacePath = path.join(this.spaceStorePath, id);
+      if (fs.existsSync(spacePath)) {
+        fs.rmSync(spacePath, { recursive: true, force: true });
+        logger.info(`Espacio ${id} eliminado`);
+      }
+
+      const objectPath = path.join(this.objectStorePath, id);
+      if (fs.existsSync(objectPath)) {
+        fs.rmSync(objectPath, { recursive: true, force: true });
+        logger.info(`Objetos del espacio ${id} eliminados`);
+      }
     } catch (error: any) {
       throw this.handleError(error);
     }
   }
 
-  // Type operations
+  async clearSpaceContent(id: string): Promise<void> {
+    try {
+      const spacePath = path.join(this.spaceStorePath, id);
+      if (fs.existsSync(spacePath)) {
+        const files = fs.readdirSync(spacePath);
+        files.forEach(file => {
+          const filePath = path.join(spacePath, file);
+          if (fs.statSync(filePath).isFile()) {
+            fs.unlinkSync(filePath);
+          }
+        });
+        logger.info(`Contenido del espacio ${id} eliminado`);
+      }
+
+      const objectPath = path.join(this.objectStorePath, id);
+      if (fs.existsSync(objectPath)) {
+        fs.rmSync(objectPath, { recursive: true, force: true });
+        logger.info(`Objetos del espacio ${id} eliminados`);
+      }
+    } catch (error: any) {
+      throw this.handleError(error);
+    }
+  }
+
+  async getObjects(spaceId?: string, type?: string): Promise<AnytypeObject[]> {
+    try {
+      if (!fs.existsSync(this.objectStorePath)) {
+        return [];
+      }
+
+      const objectDirs = fs.readdirSync(this.objectStorePath);
+      const objects: AnytypeObject[] = [];
+
+      for (const objectId of objectDirs) {
+        const objectPath = path.join(this.objectStorePath, objectId);
+        if (fs.statSync(objectPath).isDirectory()) {
+          if (spaceId && objectId !== spaceId) {
+            continue;
+          }
+
+          objects.push({
+            id: objectId,
+            type: 'object',
+            spaceId: spaceId || 'unknown',
+            properties: {},
+            createdDate: new Date().toISOString(),
+            lastModifiedDate: new Date().toISOString()
+          });
+        }
+      }
+
+      return objects;
+    } catch (error: any) {
+      throw this.handleError(error);
+    }
+  }
+
+  async getObject(id: string): Promise<AnytypeObject | null> {
+    try {
+      const objectPath = path.join(this.objectStorePath, id);
+      if (!fs.existsSync(objectPath)) {
+        return null;
+      }
+
+      return {
+        id,
+        type: 'object',
+        spaceId: 'unknown',
+        properties: {},
+        createdDate: new Date().toISOString(),
+        lastModifiedDate: new Date().toISOString()
+      };
+    } catch (error: any) {
+      throw this.handleError(error);
+    }
+  }
+
+  async createObject(params: CreateObjectParams): Promise<AnytypeObject> {
+    throw new Error('createObject no implementado para acceso directo');
+  }
+
+  async updateObject(id: string, properties: Record<string, any>): Promise<AnytypeObject> {
+    throw new Error('updateObject no implementado para acceso directo');
+  }
+
+  async deleteObject(id: string): Promise<void> {
+    try {
+      const objectPath = path.join(this.objectStorePath, id);
+      if (fs.existsSync(objectPath)) {
+        fs.rmSync(objectPath, { recursive: true, force: true });
+        logger.info(`Objeto ${id} eliminado`);
+      }
+    } catch (error: any) {
+      throw this.handleError(error);
+    }
+  }
+
+  async searchObjects(query: string, spaceId?: string, type?: string): Promise<AnytypeObject[]> {
+    return this.getObjects(spaceId, type);
+  }
+
+  async getObjectRelations(objectId: string): Promise<AnytypeObject[]> {
+    return [];
+  }
+
   async getTypes(spaceId?: string): Promise<AnytypeType[]> {
     try {
-      const params: Record<string, any> = {};
-      if (spaceId) params.space_id = spaceId;
-
-      const response = await this.client.get("/types", { params });
-      return response.data.types || [];
+      return [];
     } catch (error: any) {
       throw this.handleError(error);
     }
@@ -235,54 +273,27 @@ export class AnytypeClient {
 
   async getType(id: string): Promise<AnytypeType | null> {
     try {
-      const response = await this.client.get(`/types/${id}`);
-      return response.data.type || null;
+      return null;
     } catch (error: any) {
-      if (error.response?.status === 404) {
-        return null;
-      }
       throw this.handleError(error);
     }
   }
 
   async createType(params: { spaceId: string; name: string; properties?: Record<string, any> }): Promise<AnytypeType> {
-    try {
-      const response = await this.client.post("/types", {
-        space_id: params.spaceId,
-        name: params.name,
-        properties: params.properties,
-      });
-      return response.data.type;
-    } catch (error: any) {
-      throw this.handleError(error);
-    }
+    throw new Error('createType no implementado para acceso directo');
   }
 
   async updateType(id: string, params: { name?: string; properties?: Record<string, any> }): Promise<AnytypeType> {
-    try {
-      const response = await this.client.patch(`/types/${id}`, params);
-      return response.data.type;
-    } catch (error: any) {
-      throw this.handleError(error);
-    }
+    throw new Error('updateType no implementado para acceso directo');
   }
 
   async deleteType(id: string): Promise<void> {
-    try {
-      await this.client.delete(`/types/${id}`);
-    } catch (error: any) {
-      throw this.handleError(error);
-    }
+    throw new Error('deleteType no implementado para acceso directo');
   }
 
-  // Relation operations
   async getRelations(spaceId?: string): Promise<AnytypeRelation[]> {
     try {
-      const params: Record<string, any> = {};
-      if (spaceId) params.space_id = spaceId;
-
-      const response = await this.client.get("/relations", { params });
-      return response.data.relations || [];
+      return [];
     } catch (error: any) {
       throw this.handleError(error);
     }
@@ -290,74 +301,33 @@ export class AnytypeClient {
 
   async getRelation(id: string): Promise<AnytypeRelation | null> {
     try {
-      const response = await this.client.get(`/relations/${id}`);
-      return response.data.relation || null;
+      return null;
     } catch (error: any) {
-      if (error.response?.status === 404) {
-        return null;
-      }
       throw this.handleError(error);
     }
   }
 
   async createRelation(params: { spaceId: string; name: string; format: string; options?: Record<string, any> }): Promise<AnytypeRelation> {
-    try {
-      const response = await this.client.post("/relations", {
-        space_id: params.spaceId,
-        name: params.name,
-        format: params.format,
-        options: params.options,
-      });
-      return response.data.relation;
-    } catch (error: any) {
-      throw this.handleError(error);
-    }
+    throw new Error('createRelation no implementado para acceso directo');
   }
 
   async updateRelation(id: string, params: { name?: string; format?: string; options?: Record<string, any> }): Promise<AnytypeRelation> {
-    try {
-      const response = await this.client.patch(`/relations/${id}`, params);
-      return response.data.relation;
-    } catch (error: any) {
-      throw this.handleError(error);
-    }
+    throw new Error('updateRelation no implementado para acceso directo');
   }
 
   async deleteRelation(id: string): Promise<void> {
-    try {
-      await this.client.delete(`/relations/${id}`);
-    } catch (error: any) {
-      throw this.handleError(error);
-    }
+    throw new Error('deleteRelation no implementado para acceso directo');
   }
 
-  // Handle API errors
   private handleError(error: any): Error {
-    if (error.response) {
-      // The request was made and the server responded with a status code
-      // that falls out of the range of 2xx
-      const { status, data } = error.response;
-      const message = data?.message || error.message;
-
-      if (status === 401) {
-        return new ApiError(401, "Unauthorized - Invalid API key");
-      } else if (status === 403) {
-        return new ApiError(403, "Forbidden - Insufficient permissions");
-      } else if (status === 404) {
-        return new ApiError(404, "Resource not found");
-      } else if (status === 429) {
-        return new ApiError(429, "Too many requests - Rate limit exceeded");
-      } else if (status >= 500) {
-        return new ApiError(500, "Internal server error - Please try again later");
-      } else {
-        return new ApiError(status, message);
-      }
-    } else if (error.request) {
-      // The request was made but no response was received
-      return new Error("No response received from Anytype API");
-    } else {
-      // Something happened in setting up the request that triggered an Error
-      return error;
+    if (error.code === 'ENOENT') {
+      return new ApiError(404, 'File not found', error.message);
     }
+    if (error.code === 'EACCES') {
+      return new ApiError(403, 'Permission denied', error.message);
+    }
+    
+    logger.error('Anytype client error:', error);
+    return new ApiError(500, 'Internal server error', error.message);
   }
 }

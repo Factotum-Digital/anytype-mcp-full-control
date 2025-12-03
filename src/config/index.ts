@@ -8,7 +8,7 @@ dotenv.config();
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.string().default("31009"),
-  ANYTYPE_API_URL: z.string().default("http://localhost:31009/v1"),
+  ANYTYPE_API_URL: z.string().default("http://localhost:31009"),
   ANYTYPE_API_KEY: z.string().min(1, "ANYTYPE_API_KEY is required"),
   ANYTYPE_API_VERSION: z.string().default("2025-05-20"),
   LOG_LEVEL: z.enum(["error", "warn", "info", "debug"]).default("info"),
